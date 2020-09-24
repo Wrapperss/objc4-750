@@ -4906,6 +4906,12 @@ IMP lookUpImpOrForward(Class cls, SEL sel, id inst,
         realizeClass(cls);
     }
 
+    /*
+     如果 receiverClass 需要初始化且未初始化，就进行初始化操作
+     调用 _class_initialize , 该函数会递归遍历父类，判断父类是否存在且还未初始化   _class_initialize (_class_getNonMetaClass(cls, inst));
+     调用 _class_initialize , 会给 cls 发送一条 initialize 消息
+     */
+    
     if (initialize  &&  !cls->isInitialized()) {
         runtimeLock.unlock();
         _class_initialize (_class_getNonMetaClass(cls, inst));
