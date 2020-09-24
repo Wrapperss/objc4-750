@@ -779,29 +779,36 @@ attachCategories(Class cls, category_list *cats, bool flush_caches)
     int mcount = 0;
     int propcount = 0;
     int protocount = 0;
-    int i = cats->count;
+    int i = cats->count; // 宿主类的分类个数
     bool fromBundle = NO;
-    while (i--) {
+    while (i--) { // 倒叙遍历，最先访问最后编译的分类
+        // 获取一个分类
         auto& entry = cats->list[i];
 
+        // 获取该分类的方法列表
         method_list_t *mlist = entry.cat->methodsForMeta(isMeta);
         if (mlist) {
+            // 最后编译的分类数据最先加到数组中
             mlists[mcount++] = mlist;
             fromBundle |= entry.hi->isBundle();
         }
 
+        // 获取该分类的属性列表
         property_list_t *proplist = 
             entry.cat->propertiesForMeta(isMeta, entry.hi);
         if (proplist) {
+            // 最后编译的分类数据最先加到数组中
             proplists[propcount++] = proplist;
         }
 
+        // 协议类似上述
         protocol_list_t *protolist = entry.cat->protocols;
         if (protolist) {
             protolists[protocount++] = protolist;
         }
     }
 
+    // 获取宿主类的 class_rw_t 数据
     auto rw = cls->data();
 
     prepareMethodLists(cls, mlists, mcount, NO, fromBundle);
@@ -907,12 +914,14 @@ static void remethodizeClass(Class cls)
     isMeta = cls->isMetaClass();
 
     // Re-methodizing: check for more categories
+    // 获取cls中所有未整个的Categories
     if ((cats = unattachedCategoriesForClass(cls, false/*not realizing*/))) {
         if (PrintConnecting) {
             _objc_inform("CLASS: attaching categories to class '%s' %s", 
                          cls->nameForLogging(), isMeta ? "(meta)" : "");
         }
-        
+        // cls 宿主类
+        // cats 所有 Categories
         attachCategories(cls, cats, true /*flush caches*/);        
         free(cats);
     }

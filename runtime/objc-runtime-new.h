@@ -717,17 +717,32 @@ class list_array_tt {
         }
     }
 
+    // 所有分类的方法列表的二维数组
+    // addCount: 含有方法列表的分类个数。即 addedLists 的元素个数
     void attachLists(List* const * addedLists, uint32_t addedCount) {
         if (addedCount == 0) return;
 
         if (hasArray()) {
             // many lists -> many lists
+            // 宿主类 rw-methods方法列表中原有元素总和
             uint32_t oldCount = array()->count;
             uint32_t newCount = oldCount + addedCount;
+            // 根据新总数分配内存 -> 扩容
             setArray((array_t *)realloc(array(), array_t::byteSize(newCount)));
+            // 重新设置元素的总数
             array()->count = newCount;
+            /*
+             内存移动
+             将宿主类中原有的方法列表挪动到后面去，有几个分类就移动几格
+             */
             memmove(array()->lists + addedCount, array()->lists, 
                     oldCount * sizeof(array()->lists[0]));
+            /*
+             内存拷贝
+             将 addedLists 拷贝到类中原来的方法列表指向的位置
+             
+             这也是分类方法回覆盖宿主类中方法的原因
+             */
             memcpy(array()->lists, addedLists, 
                    addedCount * sizeof(array()->lists[0]));
         }
@@ -1379,12 +1394,12 @@ struct swift_class_t : objc_class {
 
 
 struct category_t {
-    const char *name;
+    const char *name; // 类名
     classref_t cls;
-    struct method_list_t *instanceMethods;
-    struct method_list_t *classMethods;
-    struct protocol_list_t *protocols;
-    struct property_list_t *instanceProperties;
+    struct method_list_t *instanceMethods; // 实例方法列表
+    struct method_list_t *classMethods;  // 类方法列表
+    struct protocol_list_t *protocols;  // 协议列表
+    struct property_list_t *instanceProperties; // 属性列表
     // Fields below this point are not always present on disk.
     struct property_list_t *_classProperties;
 
