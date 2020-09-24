@@ -2857,8 +2857,13 @@ static void schedule_class_load(Class cls)
     if (cls->data()->flags & RW_LOADED) return;
 
     // Ensure superclass-first ordering
+    /*
+     递归调用
+     先添加再添加子类
+    */
     schedule_class_load(cls->superclass);
 
+    // 将可加载的类添加到 loadable_classes 数组中
     add_class_to_loadable_list(cls);
     cls->setInfo(RW_LOADED); 
 }
@@ -2878,12 +2883,16 @@ void prepare_load_methods(const headerType *mhdr)
 
     runtimeLock.assertLocked();
 
+    // 按编译顺序取得类数组
     classref_t *classlist = 
         _getObjc2NonlazyClassList(mhdr, &count);
     for (i = 0; i < count; i++) {
+        // 将可加载的类添加到 loadable_classes 数组中
+        // 先添加父类 再添加子类
         schedule_class_load(remapClass(classlist[i]));
     }
 
+    // 按编译顺序获取分类数组
     category_t **categorylist = _getObjc2NonlazyCategoryList(mhdr, &count);
     for (i = 0; i < count; i++) {
         category_t *cat = categorylist[i];
@@ -2891,6 +2900,7 @@ void prepare_load_methods(const headerType *mhdr)
         if (!cls) continue;  // category for ignored weak-linked class
         realizeClass(cls);
         assert(cls->ISA()->isRealized());
+        // 将可加载到分类添加到 loadable_categories 数组中
         add_category_to_loadable_list(cat);
     }
 }

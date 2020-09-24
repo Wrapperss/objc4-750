@@ -33,12 +33,12 @@ typedef void(*load_method_t)(id, SEL);
 
 struct loadable_class {
     Class cls;  // may be nil
-    IMP method;
+    IMP method; // 类的 +load 方法地址
 };
 
 struct loadable_category {
     Category cat;  // may be nil
-    IMP method;
+    IMP method; // 分类的 +load 方法地址
 };
 
 
@@ -193,6 +193,7 @@ static void call_class_loads(void)
     loadable_classes_used = 0;
     
     // Call all +loads for the detached list.
+    // 一堆可加载的类，将他们保存到存放 loadable_class 结构体类型元素的数组
     for (i = 0; i < used; i++) {
         Class cls = classes[i].cls;
         load_method_t load_method = (load_method_t)classes[i].method;
@@ -201,6 +202,8 @@ static void call_class_loads(void)
         if (PrintLoading) {
             _objc_inform("LOAD: +[%s load]\n", cls->nameForLogging());
         }
+        
+        // 直接通过函数地址调用 +load 方法
         (*load_method)(cls, SEL_load);
     }
     
@@ -227,6 +230,7 @@ static bool call_category_loads(void)
     bool new_categories_added = NO;
     
     // Detach current loadable list.
+    // 一堆可加载的分类，将他们保存到存放 loadable_category 结构体类型元素的数组
     struct loadable_category *cats = loadable_categories;
     int used = loadable_categories_used;
     int allocated = loadable_categories_allocated;
@@ -237,6 +241,7 @@ static bool call_category_loads(void)
     // Call all +loads for the detached list.
     for (i = 0; i < used; i++) {
         Category cat = cats[i].cat;
+        // 从数组中取出一个分类的 method。这个 method 就是分类的 +load 方法地址
         load_method_t load_method = (load_method_t)cats[i].method;
         Class cls;
         if (!cat) continue;
@@ -248,6 +253,7 @@ static bool call_category_loads(void)
                              cls->nameForLogging(), 
                              _category_getName(cat));
             }
+            // 直接通过函数指针地址调用 +load 方法
             (*load_method)(cls, SEL_load);
             cats[i].cat = nil;
         }
@@ -350,11 +356,15 @@ void call_load_methods(void)
     do {
         // 1. Repeatedly call class +loads until there aren't any more
         while (loadable_classes_used > 0) {
+            // 先调用类中的 load 方法
             call_class_loads();
         }
 
         // 2. Call category +loads ONCE
+        // 再调用分类中的 load 方法
         more_categories = call_category_loads();
+        
+        // 类和分类的+load方法是直接通过函数地址调用，所以都会调用。
 
         // 3. Run more +loads if there are classes OR more untried categories
     } while (loadable_classes_used > 0  ||  more_categories);
