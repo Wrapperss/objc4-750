@@ -42,8 +42,8 @@ private:
     MethodCacheIMP _imp;
     cache_key_t _key;
 #else
-    cache_key_t _key;
-    MethodCacheIMP _imp;
+    cache_key_t _key; // SEL
+    MethodCacheIMP _imp; // IMP 函数的内存地址
 #endif
 
 public:
@@ -57,9 +57,9 @@ public:
 
 
 struct cache_t {
-    struct bucket_t *_buckets;
-    mask_t _mask;
-    mask_t _occupied;
+    struct bucket_t *_buckets; // 哈希表
+    mask_t _mask;              // 哈希表的长度 - 1
+    mask_t _occupied;          // 已经缓存的方法数量
 
 public:
     struct bucket_t *buckets();
@@ -1412,7 +1412,9 @@ struct category_t {
 };
 
 struct objc_super2 {
+    // 消息接收者
     id receiver;
+    // receiverClass（消息接收者的class对象）
     Class current_class;
 };
 

@@ -4688,6 +4688,7 @@ static method_t *findMethodInSortedMethodList(SEL key, const method_list_t *list
     uintptr_t keyValue = (uintptr_t)key;
     uint32_t count;
     
+    // ⚠️count >>= 1 二分查找
     for (count = list->count; count != 0; count >>= 1) {
         probe = base + (count >> 1);
         
@@ -4723,9 +4724,11 @@ static method_t *search_method_list(const method_list_t *mlist, SEL sel)
     int methodListHasExpectedSize = mlist->entsize() == sizeof(method_t);
     
     if (__builtin_expect(methodListIsFixedUp && methodListHasExpectedSize, 1)) {
+        // ⚠️如果方法列表是经过排序的，则进行二分查找
         return findMethodInSortedMethodList(sel, mlist);
     } else {
         // Linear search of unsorted method list
+        // ⚠️如果方法列表没有进行排序，则进行线性遍历查找
         for (auto& meth : *mlist) {
             if (meth.name == sel) return &meth;
         }
@@ -4748,6 +4751,10 @@ static method_t *search_method_list(const method_list_t *mlist, SEL sel)
 static method_t *
 getMethodNoSuper_nolock(Class cls, SEL sel)
 {
+    /*
+     如果方法列表是经过排序的，则进行二分查找;
+     如果方法列表没有进行排序，则进行线性遍历查找。
+     */
     runtimeLock.assertLocked();
 
     assert(cls->isRealized());
@@ -4980,23 +4987,25 @@ IMP lookUpImpOrForward(Class cls, SEL sel, id inst,
     }
 
     // No implementation found. Try method resolver once.
-
+    // ⚠️如果“消息发送”阶段未找到方法的实现，进行一次“动态方法解析”
     if (resolver  &&  !triedResolver) {
         runtimeLock.unlock();
         _class_resolveMethod(cls, sel, inst);
         runtimeLock.lock();
         // Don't cache the result; we don't hold the lock so it may have 
         // changed already. Re-do the search from scratch instead.
+        // ⚠️标记triedResolver为YES
         triedResolver = YES;
+        // ⚠️再次进入消息发送，从“去 receiverClass 的 cache 中查找方法”这一步开始
         goto retry;
     }
 
     // No implementation found, and method resolver didn't help. 
     // Use forwarding.
-
-    imp = (IMP)_objc_msgForward_impcache;
-    cache_fill(cls, sel, imp, inst);
-
+    // ⚠️如果“消息发送”阶段未找到方法的实现，且通过“动态方法解析”没有解决
+    // ⚠️进入“消息转发”阶段
+    imp = (IMP)_objc_msgForward_impcache;  // 进入汇编
+    cache_fill(cls, sel, imp, inst);       // 缓存方法
  done:
     runtimeLock.unlock();
 

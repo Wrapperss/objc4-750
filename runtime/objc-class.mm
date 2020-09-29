@@ -574,16 +574,24 @@ static void _class_resolveClassMethod(Class cls, SEL sel, id inst)
 {
     assert(cls->isMetaClass());
 
+    // ⚠️查看 receiverClass 的 meta-class 对象的方法列表里面是否有 SEL_resolveClassMethod 函数 imp
+    // ⚠️也就是看我们是否实现了 +(BOOL)resolveClassMethod:(SEL)sel 方法
+    // ⚠️这里一定会找到该方法实现，因为 NSObject 中有实现
     if (! lookUpImpOrNil(cls, SEL_resolveClassMethod, inst, 
                          NO/*initialize*/, YES/*cache*/, NO/*resolver*/)) 
     {
         // Resolver not implemented.
+        // ⚠️如果没找到，说明程序异常，直接返回
         return;
     }
 
+    // ⚠️如果找到了，通过 objc_msgSend 给对象发送一条 SEL_resolveClassMethod 消息
+    // ⚠️即调用一下 +(BOOL)resolveClassMethod:(SEL)sel 方法
     BOOL (*msg)(Class, SEL, SEL) = (typeof(msg))objc_msgSend;
     bool resolved = msg(_class_getNonMetaClass(cls, inst), 
                         SEL_resolveClassMethod, sel);
+
+    // ⚠️下面是解析结果的一些打印信息
 
     // Cache the result (good or bad) so the resolver doesn't fire next time.
     // +resolveClassMethod adds to self->ISA() a.k.a. cls
@@ -617,16 +625,23 @@ static void _class_resolveClassMethod(Class cls, SEL sel, id inst)
 **********************************************************************/
 static void _class_resolveInstanceMethod(Class cls, SEL sel, id inst)
 {
+    // ⚠️查看 receiverClass 的 meta-class 对象的方法列表里面是否有 SEL_resolveInstanceMethod 函数 imp
+    // ⚠️也就是看我们是否实现了 +(BOOL)resolveInstanceMethod:(SEL)sel 方法
+    // ⚠️这里一定会找到该方法实现，因为 NSObject 中有实现
     if (! lookUpImpOrNil(cls->ISA(), SEL_resolveInstanceMethod, cls, 
                          NO/*initialize*/, YES/*cache*/, NO/*resolver*/)) 
     {
         // Resolver not implemented.
+        // ⚠️如果没找到，说明程序异常，直接返回
         return;
     }
 
+    // ⚠️如果找到了，通过 objc_msgSend 给对象发送一条 SEL_resolveInstanceMethod 消息
+    // ⚠️即调用一下 +(BOOL)resolveInstanceMethod:(SEL)sel 方法
     BOOL (*msg)(Class, SEL, SEL) = (typeof(msg))objc_msgSend;
     bool resolved = msg(cls, SEL_resolveInstanceMethod, sel);
 
+    // ⚠️下面是解析结果的一些打印信息
     // Cache the result (good or bad) so the resolver doesn't fire next time.
     // +resolveInstanceMethod adds to self a.k.a. cls
     IMP imp = lookUpImpOrNil(cls, sel, inst, 
@@ -659,13 +674,16 @@ static void _class_resolveInstanceMethod(Class cls, SEL sel, id inst)
 **********************************************************************/
 void _class_resolveMethod(Class cls, SEL sel, id inst)
 {
+    // ⚠️判断是 class 对象还是 meta-class 对象
     if (! cls->isMetaClass()) {
         // try [cls resolveInstanceMethod:sel]
+        // ⚠️核心函数
         _class_resolveInstanceMethod(cls, sel, inst);
     } 
     else {
         // try [nonMetaClass resolveClassMethod:sel]
         // and [cls resolveInstanceMethod:sel]
+        // ⚠️核心函数
         _class_resolveClassMethod(cls, sel, inst);
         if (!lookUpImpOrNil(cls, sel, inst, 
                             NO/*initialize*/, YES/*cache*/, NO/*resolver*/)) 
