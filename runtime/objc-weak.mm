@@ -459,11 +459,14 @@ weak_is_registered_no_lock(weak_table_t *weak_table, id referent_id)
  * @param referent The object being deallocated. 
  */
 void 
-weak_clear_no_lock(weak_table_t *weak_table, id referent_id) 
+weak_clear_no_lock(weak_table_t *weak_table, id referent_id)
 {
+    // 获得 weak 指向的地址，即对象内存地址
     objc_object *referent = (objc_object *)referent_id;
 
+    // 找到管理 referent 的 entry 容器
     weak_entry_t *entry = weak_entry_for_referent(weak_table, referent);
+    // 如果 entry == nil，表示没有弱引用需要置为 nil，直接返回
     if (entry == nil) {
         /// XXX shouldn't happen, but does with mismatched CF/objc
         //printf("XXX no entry for clear deallocating %p\n", referent);
@@ -475,7 +478,9 @@ weak_clear_no_lock(weak_table_t *weak_table, id referent_id)
     size_t count;
     
     if (entry->out_of_line()) {
+        // referrers 是一个数组，存储所有指向 referent_id 的弱引用
         referrers = entry->referrers;
+        // 弱引用数组长度
         count = TABLE_SIZE(entry);
     } 
     else {
@@ -483,6 +488,7 @@ weak_clear_no_lock(weak_table_t *weak_table, id referent_id)
         count = WEAK_INLINE_COUNT;
     }
     
+    // 遍历弱引用数组，将所有指向 referent_id 的弱引用全部置为 nil
     for (size_t i = 0; i < count; ++i) {
         objc_object **referrer = referrers[i];
         if (referrer) {
@@ -499,7 +505,7 @@ weak_clear_no_lock(weak_table_t *weak_table, id referent_id)
             }
         }
     }
-    
+    // 从 weak_table 中移除对应的弱引用的管理容器
     weak_entry_remove(weak_table, entry);
 }
 

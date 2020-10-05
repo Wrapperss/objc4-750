@@ -260,6 +260,11 @@ objc_storeStrong(id *location, id obj)
 // If CrashIfDeallocating is true, the process is halted if newObj is 
 //   deallocating or newObj's class does not support weak references. 
 //   If CrashIfDeallocating is false, nil is stored instead.
+// 更新 weak 变量
+// 如果 HaveOld == true，表示变量有旧值，它需要被清理，这个旧值可能为 nil
+// 如果 HaveNew == true，表示一个新值需要赋值给变量，这个新值可能为 nil
+// 如果 CrashIfDeallocating == true，则如果对象正在销毁或者对象不支持弱引用，则停止更新
+// 如果 CrashIfDeallocating == false，则存储 nil
 enum CrashIfDeallocating {
     DontCrashIfDeallocating = false, DoCrashIfDeallocating = true
 };
@@ -273,28 +278,33 @@ storeWeak(id *location, objc_object *newObj)
 
     Class previouslyInitializedClass = nil;
     id oldObj;
-    SideTable *oldTable;
-    SideTable *newTable;
+    SideTable *oldTable;  // 旧表，用来存放已有的 weak 变量
+    SideTable *newTable;  // 新表，用来存放新的 weak 变量
 
     // Acquire locks for old and new values.
     // Order by lock address to prevent lock ordering problems. 
     // Retry if the old value changes underneath us.
  retry:
+    // 分别获取新旧值相关联的弱引用表
+    // 如果 weak 变量有旧值，获取已有对象（该旧值对象）和旧表
     if (haveOld) {
         oldObj = *location;
         oldTable = &SideTables()[oldObj];
     } else {
         oldTable = nil;
     }
+    // 如果有新值要赋值给变量，创建新表
     if (haveNew) {
         newTable = &SideTables()[newObj];
     } else {
         newTable = nil;
     }
-
+    // 对 haveOld 和 haveNew 分别加锁
     SideTable::lockTwo<haveOld, haveNew>(oldTable, newTable);
-
+    
+    // 判断 oldObj 和 location 指向的值是否相等，即是否是同一对象，如果不是就重新获取旧值相关联的表
     if (haveOld  &&  *location != oldObj) {
+        // 解锁
         SideTable::unlockTwo<haveOld, haveNew>(oldTable, newTable);
         goto retry;
     }
@@ -302,6 +312,8 @@ storeWeak(id *location, objc_object *newObj)
     // Prevent a deadlock between the weak reference machinery
     // and the +initialize machinery by ensuring that no 
     // weakly-referenced object has an un-+initialized isa.
+    // 如果有新值，判断新值所属的类是否已经初始化
+    // 如果没有初始化，则先执行初始化，防止 +initialize 内部调用 storeWeak 产生死锁
     if (haveNew  &&  newObj) {
         Class cls = newObj->getIsa();
         if (cls != previouslyInitializedClass  &&  
@@ -323,11 +335,14 @@ storeWeak(id *location, objc_object *newObj)
     }
 
     // Clean up old value, if any.
+    // 如果有旧值，调用 weak_unregister_no_lock 清除旧值
     if (haveOld) {
+        // 移除所有指向旧值的 weak 引用，而不是赋值为 nil
         weak_unregister_no_lock(&oldTable->weak_table, oldObj, location);
     }
 
     // Assign new value, if any.
+    // 如果有新值要赋值，调用 weak_register_no_lock 将所有 weak 指针重新指向新的对象
     if (haveNew) {
         newObj = (objc_object *)
             weak_register_no_lock(&newTable->weak_table, (id)newObj, location, 
@@ -335,17 +350,22 @@ storeWeak(id *location, objc_object *newObj)
         // weak_register_no_lock returns nil if weak store should be rejected
 
         // Set is-weakly-referenced bit in refcount table.
+        // 如果存储成功
+        // 如果对象是 Tagged Pointer，不做操作
+        // 如果 isa 不是 nonpointer，设置 SideTable 中弱引用标志位
+        // 如果 isa 是 nonpointer，设置 isa 的 weakly_referenced 弱引用标志位
         if (newObj  &&  !newObj->isTaggedPointer()) {
             newObj->setWeaklyReferenced_nolock();
         }
 
+        // 将 location 指向新的对象
         // Do not set *location anywhere else. That would introduce a race.
         *location = (id)newObj;
     }
     else {
         // No new value. The storage is not changed.
     }
-    
+    // 解锁
     SideTable::unlockTwo<haveOld, haveNew>(oldTable, newTable);
 
     return (id)newObj;
@@ -406,6 +426,7 @@ objc_storeWeakOrNil(id *location, id newObj)
 id
 objc_initWeak(id *location, id newObj)
 {
+    // 如果对象为 nil，那就将 weak 指针置为 nil
     if (!newObj) {
         *location = nil;
         return nil;
@@ -1727,12 +1748,15 @@ _objc_rootAllocWithZone(Class cls, malloc_zone_t *zone)
 
 // Call [cls alloc] or [cls allocWithZone:nil], with appropriate 
 // shortcutting optimizations.
+// 调用 [cls alloc] or [cls allocWithZone:nil] 会来到这个函数，使用适当的快捷方式优化
 static ALWAYS_INLINE id
 callAlloc(Class cls, bool checkNil, bool allocWithZone=false)
 {
+    // 如果 (checkNil && !cls)，直接返回 nil
     if (slowpath(checkNil && !cls)) return nil;
-
+    // 如果是 __OBJC2__ 代码（判断当前语言是否是 Objective-C 2.0）
 #if __OBJC2__
+    // 如果 cls 没有实现自定义 allocWithZone 方法，调用 _objc_rootAllocWithZone
     if (fastpath(!cls->ISA()->hasCustomAWZ())) {
         // No alloc/allocWithZone implementation. Go straight to the allocator.
         // fixme store hasCustomAWZ in the non-meta class and 
@@ -1755,7 +1779,10 @@ callAlloc(Class cls, bool checkNil, bool allocWithZone=false)
 #endif
 
     // No shortcuts available.
+    // 没有可用的快捷方式
+    // 如果 allocWithZone 为 true，给 cls 发送 allocWithZone:nil 消息
     if (allocWithZone) return [cls allocWithZone:nil];
+    // 否则发送 alloc 消息
     return [cls alloc];
 }
 
